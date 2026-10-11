@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Bricolage Grotesque", system-ui, sans-serif;
+
+  --color-ink: #1b1633;    /* page background */
+  --color-panel: #2a2250;  /* input, name cells, panels */
+  --color-line: #3d3470;   /* borders, hover */
+  --color-paper: #f3eeff;  /* main text */
+  --color-hit: #2fa36b;    /* match */
+  --color-near: #e0b22e;   /* close */
+  --color-miss: #c8434f;   /* no match */
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-sans);
+}
