@@ -9,7 +9,16 @@ export function todayKey(date = new Date()) {
   return `${y}-${m}-${d}`
 }
 
-function dayNumber(date = new Date()) {
+
+
+// Turns "YYYY-MM-DD" back into a local date. Returns null if it isn't valid.
+export function parseDayKey(key){
+  const match = /^(\d{4})-(\d{2})$/.exec(key || '')
+  if (!match) return null
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return todayKey(date) === key ? date : null
+}
+export function dayNumber(date = new Date()) {
   const local = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
   return Math.floor((local - EPOCH) / 86400000)
 }
@@ -26,7 +35,7 @@ function mulberry32(seed) {
 
 // Everyone gets the same artist on the same day, and no artist repeats
 // until the whole list has been used once.
-export function getDailyArtist(artists) {
+export function getDailyArtist(artists, date = new Date()) {
   const ids = artists.map((a) => a.id).sort() // sorted, so file order doesn't matter
   const random = mulberry32(20261011)
 
@@ -35,6 +44,18 @@ export function getDailyArtist(artists) {
     ;[ids[i], ids[j]] = [ids[j], ids[i]]
   }
 
-  const index = ((dayNumber() % ids.length) + ids.length) % ids.length
+  const index = ((dayNumber(date) % ids.length) + ids.length) % ids.length
   return artists.find((a) => a.id === ids[index])
+}
+
+// Archive all puzzles, newest first [{key, number}]. Puzzle #1 is the launch day.
+
+export function pastDays(today = new Date()) {
+  const days = []
+  for (let n = dayNumber(today) - 1; n >= 0; n--) {
+    const date = new Date(EPOCH + n * 86400000)
+    const local = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+    days.push({ key: todayKey(local), number: n + 1})
+  }
+  return days
 }

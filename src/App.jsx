@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getDailyArtist, todayKey } from './lib/daily'
+import { dayNumber, getDailyArtist, parseDayKey, todayKey } from './lib/daily'
 import { COLUMNS, compareArtists } from './lib/compare'
+import { MAX_GUESSES, loadStats, recordResult  } from './lib/stats'
+import StatsPanel from './components/StatsPanel'
+import Countdown from './components/Countdown'
+import HowToPlay from './components/HowToPlay'
+import Archive from './components/Archive'
+
 
 const CELL_STYLE = {
   green: 'bg-hit text-white',
@@ -11,13 +17,26 @@ const EMOJI = { green: '🟩', yellow: '🟨', red: '🟥' }
 const GRID = {
   gridTemplateColumns: `repeat(${COLUMNS.length + 1}, minmax(90px, 1fr))`,
 }
-const STORAGE_KEY = `artistguessr:artist:${todayKey()}`
+
+const MODE = 'artist'
+// ?day=YYYY-MM-DD plays a past puzzle from the archive. Anything else is today.
+const TODAY = todayKey()
+const requested = parseDayKey(new URLSearchParams(window.location.search).get('day'))
+const isPastPuzzle = requested && todayKey(requested) < TODAY && dayNumber(requested) >= 0
+const PLAY_DATE = isPastPuzzle ? requested : new Date()
+const PLAY_KEY = todayKey(PLAY_DATE)
+const IS_ARCHIVE = PLAY_KEY !== TODAY
+const PUZZLE_NUMBER = dayNumber(PLAY_DATE) + 1
+const STORAGE_KEY = `artistguessr:${MODE}:${PLAY_KEY}`
+
 
 export default function App() {
   const [artists, setArtists] = useState([])
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [copied, setCopied] = useState(false)
+  const [stats, setStats] = useState(() => loadStats(MODE))
+  const [showArchive, setShowArchive] = useState(false)
   const [guessIds, setGuessIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []
@@ -49,7 +68,7 @@ export default function App() {
   }, [guessIds])
 
   const answer = useMemo(
-    () => (artists.length ? getDailyArtist(artists) : null),
+    () => (artists.length ? getDailyArtist(artists, PLAY_DATE) : null),
     [artists],
   )
 
@@ -62,6 +81,8 @@ export default function App() {
     .map((id) => artists.find((a) => a.id === id))
     .filter(Boolean)
   const won = Boolean(answer) && guessIds.includes(answer.id)
+  const lost = !won && guessIds.length >= MAX_GUESSES
+  const over = won || lost
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -75,8 +96,14 @@ export default function App() {
   }, [query, artists, guessIds])
 
   function submitGuess(artist) {
-    setGuessIds([...guessIds, artist.id])
+    if (over) return
+    const next = [...guessIds, artist.id]
+    setGuessIds(next)
     setQuery('')
+    const isWin = artist.id === answer.id
+    if (!IS_ARCHIVE && (isWin || next.length >= MAX_GUESSES)) {
+      setStats(recordResult(MODE, isWin, next.length))
+    }
   }
 
   function copyResult() {
@@ -85,7 +112,8 @@ export default function App() {
         .map((cell) => EMOJI[cell.status])
         .join(''),
     )
-    const text = `ArtistGuessr ${todayKey()}\n${guesses.length} guesses\n\n${rows.join('\n')}`
+    const score = won ? guesses.length : 'X'
+    const text = `ArtistGuessr #${PUZZLE_NUMBER} ${score}/${MAX_GUESSES}\n\n${rows.join('\n')}`
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -99,9 +127,38 @@ export default function App() {
     <main className="mx-auto max-w-5xl px-4 py-10">
       <h1 className="text-5xl font-extrabold tracking-tight">ArtistGuessr</h1>
       <p className="mt-2 max-w-md text-paper/70">
-        Guess today's artist. Each guess shows how close you are.
+        {IS_ARCHIVE ? 'Replaying an old puzzle.' : "Guess today's artist."} Each guess
+        shows how close you are.
       </p>
 
+      <nav className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <span className="rounded-md bg-panel px-2.5 py-1 font-semibold">
+          Puzzle #{PUZZLE_NUMBER} · {PLAY_KEY}
+        </span>
+        {IS_ARCHIVE && (
+          <a href="/" className="text-near hover:underline">
+            Back to today
+          </a>
+        )}
+        <button
+          onClick={() => setShowArchive(!showArchive)}
+          className="text-near hover:underline"
+        >
+          {showArchive ? 'Hide archive' : 'Archive'}
+        </button>
+      </nav>
+
+      {showArchive && (
+        <Archive
+          mode={MODE}
+          answerFor={(key) => getDailyArtist(artists, parseDayKey(key))}
+          maxGuesses={MAX_GUESSES}
+          onClose={() => setShowArchive(false)}
+        />
+      )}
+
+
+      <HowToPlay open={stats.played === 0 && guessIds.length === 0} />
       <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-sm text-paper/80">
         <li>
           <span className="mr-1.5 inline-block size-3 rounded-sm bg-hit align-middle" />
@@ -118,11 +175,19 @@ export default function App() {
         <li>Arrows point toward the answer</li>
       </ul>
 
-      {won ? (
-        <section className="mt-8 rounded-xl border border-hit bg-panel p-5">
-          <p className="text-2xl font-bold">It's {answer.name}.</p>
+      {over ? (
+        <section
+          className={`mt-8 rounded-xl border bg-panel p-5 ${won ? 'border-hit' : 'border-miss'}`}
+        >
+          <p className="text-2xl font-bold">
+            {won ? `It's ${answer.name}.` : `Out of guesses. It was ${answer.name}.`}
+          </p>
           <p className="mt-1 text-paper/80">
-            Solved in {guesses.length} {guesses.length === 1 ? 'guess' : 'guesses'}.
+            {won
+              ? `Solved in ${guesses.length} ${guesses.length === 1 ? 'guess' : 'guesses'}.`
+              : IS_ARCHIVE
+                ? 'Pick another day from the archive.'
+                : 'Your streak resets. Try again tommorow.'}
           </p>
           <button
             onClick={copyResult}
@@ -130,9 +195,25 @@ export default function App() {
           >
             {copied ? 'Copied!' : 'Copy result'}
           </button>
+          {IS_ARCHIVE ? (
+            <p className="mt-3 text-paper/80">
+              Archive games don't change your stats.{' '}
+              <a href="/" className="text-near hover:underline">
+                Play today's puzzle
+              </a>
+            </p>
+          ) : (
+            <>
+              <Countdown />
+              <StatsPanel stats={stats} highlight={won ? guesses.length : null} />
+            </>
+          )}
         </section>
       ) : (
         <div className="relative mt-8">
+          <p className="mb-2 text-sm text-paper/70">
+            Guess {guessIds.length + 1} of {MAX_GUESSES}
+          </p>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
