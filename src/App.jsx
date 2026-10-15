@@ -1,34 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import { dayNumber, getDailyArtist, parseDayKey, todayKey } from './lib/daily'
-import { COLUMNS, compareArtists } from './lib/compare'
-import { MAX_GUESSES, loadStats, recordResult  } from './lib/stats'
-import StatsPanel from './components/StatsPanel'
-import Countdown from './components/Countdown'
-import HowToPlay from './components/HowToPlay'
+import { compareArtists } from './lib/compare'
+import { MAX_GUESSES, loadStats, recordResult } from './lib/stats'
+import { dayStatus, isFinished, loadGuesses } from './lib/progress'
 import Archive from './components/Archive'
+import Board from './components/Board'
+import Footer from './components/Footer'
+import GuessInput from './components/GuessInput'
+import Header from './components/Header'
+import HowToPlay from './components/HowToPlay'
+import Landing from './components/Landing'
+import Modal from './components/Modal'
+import ResultsModal from './components/ResultsModal'
 
-
-const CELL_STYLE = {
-  green: 'bg-hit text-white',
-  yellow: 'bg-near text-ink',
-  red: 'bg-miss text-white',
-}
 const EMOJI = { green: '🟩', yellow: '🟨', red: '🟥' }
-const GRID = {
-  gridTemplateColumns: `repeat(${COLUMNS.length + 1}, minmax(90px, 1fr))`,
-}
-
 const MODE = 'artist'
+
 // ?day=YYYY-MM-DD plays a past puzzle from the archive. Anything else is today.
 const TODAY = todayKey()
 const requested = parseDayKey(new URLSearchParams(window.location.search).get('day'))
-const isPastPuzzle = requested && todayKey(requested) < TODAY && dayNumber(requested) >= 0
+const isPastPuzzle =
+  requested && todayKey(requested) < TODAY && dayNumber(requested) >= 0
 const PLAY_DATE = isPastPuzzle ? requested : new Date()
 const PLAY_KEY = todayKey(PLAY_DATE)
 const IS_ARCHIVE = PLAY_KEY !== TODAY
 const PUZZLE_NUMBER = dayNumber(PLAY_DATE) + 1
 const STORAGE_KEY = `artistguessr:${MODE}:${PLAY_KEY}`
-
 
 export default function App() {
   const [artists, setArtists] = useState([])
@@ -36,7 +33,10 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [copied, setCopied] = useState(false)
   const [stats, setStats] = useState(() => loadStats(MODE))
-  const [showArchive, setShowArchive] = useState(false)
+  // Which page is showing: "landing", "game" or "archive". Archive links skip the landing.
+  const [screen, setScreen] = useState(IS_ARCHIVE ? 'game' : 'landing')
+  // Which pop-up is open: null, "help" or "stats".
+  const [modal, setModal] = useState(null)
   const [guessIds, setGuessIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []
@@ -84,6 +84,12 @@ export default function App() {
   const lost = !won && guessIds.length >= MAX_GUESSES
   const over = won || lost
 
+  // The archive unlocks once today's puzzle is finished (won or lost).
+  const todayIds = IS_ARCHIVE ? loadGuesses(MODE, TODAY) : guessIds
+  const todayAnswer = artists.length ? getDailyArtist(artists) : null
+  const todayDone =
+    Boolean(todayAnswer) && isFinished(dayStatus(todayIds, todayAnswer.id, MAX_GUESSES))
+
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return []
@@ -100,10 +106,22 @@ export default function App() {
     const next = [...guessIds, artist.id]
     setGuessIds(next)
     setQuery('')
+
     const isWin = artist.id === answer.id
+    // Archive games don't count toward stats or the streak.
     if (!IS_ARCHIVE && (isWin || next.length >= MAX_GUESSES)) {
       setStats(recordResult(MODE, isWin, next.length))
     }
+    // Game over: show the results after a short pause so the last row is visible.
+    if (isWin || next.length >= MAX_GUESSES) {
+      setTimeout(() => setModal('stats'), 700)
+    }
+  }
+
+  // Play button on the landing page. First-timers see the rules first.
+  function play() {
+    setScreen('game')
+    if (stats.played === 0 && guessIds.length === 0) setModal('help')
   }
 
   function copyResult() {
@@ -120,163 +138,142 @@ export default function App() {
     })
   }
 
-  if (error) return <p className="p-6 text-near">{error}</p>
-  if (!answer) return <p className="p-6 text-paper/70">Loading artists...</p>
+  if (error) return <p className="p-6 text-crimson">{error}</p>
+  if (!answer) return <p className="p-6 text-ash">Loading artists...</p>
 
-  return (
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      <h1 className="text-5xl font-extrabold tracking-tight">ArtistGuessr</h1>
-      <p className="mt-2 max-w-md text-paper/70">
-        {IS_ARCHIVE ? 'Replaying an old puzzle.' : "Guess today's artist."} Each guess
-        shows how close you are.
-      </p>
+  const playDate = PLAY_DATE.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
+  const result = over ? { won, answer: answer.name, count: guesses.length } : null
 
-      <nav className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-        <span className="rounded-md bg-panel px-2.5 py-1 font-semibold">
-          Puzzle #{PUZZLE_NUMBER} · {PLAY_KEY}
-        </span>
-        {IS_ARCHIVE && (
-          <a href="/" className="text-near hover:underline">
-            Back to today
-          </a>
-        )}
-        <button
-          onClick={() => setShowArchive(!showArchive)}
-          className="text-near hover:underline"
-        >
-          {showArchive ? 'Hide archive' : 'Archive'}
-        </button>
-      </nav>
+  // Opened an archive link before finishing today: show the locked archive.
+  const page = IS_ARCHIVE && !todayDone ? 'archive' : screen
 
-      {showArchive && (
-        <Archive
-          mode={MODE}
-          answerFor={(key) => getDailyArtist(artists, parseDayKey(key))}
-          maxGuesses={MAX_GUESSES}
-          onClose={() => setShowArchive(false)}
+  const modals = (
+    <>
+      {modal === 'help' && (
+        <Modal title="How to play" onClose={() => setModal(null)}>
+          <HowToPlay />
+        </Modal>
+      )}
+      {modal === 'stats' && (
+        <ResultsModal
+          result={result}
+          stats={stats}
+          isArchive={IS_ARCHIVE}
+          copied={copied}
+          onShare={copyResult}
+          onArchive={() => {
+            setModal(null)
+            setScreen('archive')
+          }}
+          onClose={() => setModal(null)}
         />
       )}
+    </>
+  )
 
+  if (page === 'landing') {
+    return (
+      <>
+        <Landing
+          puzzleNumber={PUZZLE_NUMBER}
+          playLabel={over ? 'See results' : guessIds.length ? 'Continue' : 'Play'}
+          onPlay={play}
+          onArchive={() => setScreen('archive')}
+          onHelp={() => setModal('help')}
+        />
+        {modals}
+      </>
+    )
+  }
 
-      <HowToPlay open={stats.played === 0 && guessIds.length === 0} />
-      <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-sm text-paper/80">
-        <li>
-          <span className="mr-1.5 inline-block size-3 rounded-sm bg-hit align-middle" />
-          Match
-        </li>
-        <li>
-          <span className="mr-1.5 inline-block size-3 rounded-sm bg-near align-middle" />
-          Close
-        </li>
-        <li>
-          <span className="mr-1.5 inline-block size-3 rounded-sm bg-miss align-middle" />
-          No match
-        </li>
-        <li>Arrows point toward the answer</li>
-      </ul>
+  return (
+    <div className="flex min-h-screen flex-col">
+      <Header
+        onHome={() => (IS_ARCHIVE ? (window.location.href = '/') : setScreen('landing'))}
+        onHelp={() => setModal('help')}
+        onArchive={() => setScreen('archive')}
+        onStats={() => setModal('stats')}
+      />
 
-      {over ? (
-        <section
-          className={`mt-8 rounded-xl border bg-panel p-5 ${won ? 'border-hit' : 'border-miss'}`}
-        >
-          <p className="text-2xl font-bold">
-            {won ? `It's ${answer.name}.` : `Out of guesses. It was ${answer.name}.`}
-          </p>
-          <p className="mt-1 text-paper/80">
-            {won
-              ? `Solved in ${guesses.length} ${guesses.length === 1 ? 'guess' : 'guesses'}.`
-              : IS_ARCHIVE
-                ? 'Pick another day from the archive.'
-                : 'Your streak resets. Try again tommorow.'}
-          </p>
-          <button
-            onClick={copyResult}
-            className="mt-4 rounded-lg bg-hit px-4 py-2 font-semibold text-white hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-near"
-          >
-            {copied ? 'Copied!' : 'Copy result'}
-          </button>
-          {IS_ARCHIVE ? (
-            <p className="mt-3 text-paper/80">
-              Archive games don't change your stats.{' '}
-              <a href="/" className="text-near hover:underline">
-                Play today's puzzle
-              </a>
-            </p>
-          ) : (
-            <>
-              <Countdown />
-              <StatsPanel stats={stats} highlight={won ? guesses.length : null} />
-            </>
-          )}
-        </section>
-      ) : (
-        <div className="relative mt-8">
-          <p className="mb-2 text-sm text-paper/70">
-            Guess {guessIds.length + 1} of {MAX_GUESSES}
-          </p>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && suggestions[0]) submitGuess(suggestions[0])
-            }}
-            placeholder="Type an artist name"
-            aria-label="Artist name"
-            className="w-full rounded-xl border border-line bg-panel px-4 py-3 text-lg text-paper outline-none placeholder:text-paper/50 focus-visible:border-near focus-visible:ring-2 focus-visible:ring-near"
+      <div className="flex-1">
+        {page === 'archive' ? (
+          <Archive
+            mode={MODE}
+            answerFor={(date) => getDailyArtist(artists, date)}
+            maxGuesses={MAX_GUESSES}
+            unlocked={todayDone}
           />
-          {suggestions.length > 0 && (
-            <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-xl border border-line bg-panel shadow-lg">
-              {suggestions.map((a) => (
-                <li key={a.id}>
-                  <button
-                    onClick={() => submitGuess(a)}
-                    className="w-full px-4 py-2.5 text-left hover:bg-line focus-visible:bg-line focus-visible:outline-none"
-                  >
-                    {a.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      <div className="mt-8 overflow-x-auto pb-4">
-        <div className="min-w-[900px]">
-          <div
-            className="grid gap-1 text-center text-sm text-paper/70"
-            style={GRID}
-          >
-            <div>Artist</div>
-            {COLUMNS.map((c) => (
-              <div key={c.key}>{c.label}</div>
-            ))}
-          </div>
-
-          {guesses.length === 0 && (
-            <p className="mt-3 text-paper/60">Your guesses will appear here.</p>
-          )}
-
-          {[...guesses].reverse().map((g) => (
-            <div key={g.id} className="mt-1 grid gap-1" style={GRID}>
-              <div className="flex items-center justify-center rounded-md bg-panel p-2 text-center text-sm font-semibold">
-                {g.name}
-              </div>
-              {compareArtists(g, answer).map((cell) => (
-                <div
-                  key={cell.key}
-                  className={`flex flex-col items-center justify-center rounded-md p-2 text-center text-sm ${CELL_STYLE[cell.status]}`}
-                >
-                  <span>{cell.text}</span>
-                  {cell.hint && (
-                    <span className="text-lg leading-none">{cell.hint}</span>
-                  )}
-                </div>
-              ))}
+        ) : (
+          <main className="mx-auto max-w-[800px] px-4 py-6">
+            {/* Info row: puzzle number, date, guesses used */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-3 text-sm">
+              <span>
+                <b>No. {PUZZLE_NUMBER}</b> · {playDate}
+                {IS_ARCHIVE && (
+                  <a href="/" className="ml-3 font-semibold text-crimson hover:underline">
+                    Back to today
+                  </a>
+                )}
+              </span>
+              <span className="flex items-center gap-3">
+                Guess {Math.min(guessIds.length + 1, MAX_GUESSES)} of {MAX_GUESSES}
+                <span className="flex gap-1" aria-hidden="true">
+                  {Array.from({ length: MAX_GUESSES }, (_, i) => (
+                    <span
+                      key={i}
+                      className={`size-2.5 rounded-full ${i < guessIds.length ? 'bg-crimson' : 'border border-hairline'}`}
+                    />
+                  ))}
+                </span>
+              </span>
             </div>
-          ))}
-        </div>
+
+            <h1 className="mt-8 font-display text-4xl font-black sm:text-5xl">
+              {IS_ARCHIVE ? 'Who was the artist?' : "Who's today's artist?"}
+            </h1>
+            <p className="mt-2 mb-5 text-ash">
+              Pick an artist. Each guess shows how close you are on 9 clues.
+            </p>
+
+            {over ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm bg-parchment px-4 py-3">
+                <p className="font-semibold">
+                  {won ? `You got it: ${answer.name}.` : `It was ${answer.name}.`}
+                </p>
+                <button
+                  onClick={() => setModal('stats')}
+                  className="rounded-full bg-ink px-5 py-2 text-sm font-semibold text-bone hover:brightness-125"
+                >
+                  See results
+                </button>
+              </div>
+            ) : (
+              <GuessInput
+                query={query}
+                setQuery={setQuery}
+                suggestions={suggestions}
+                onGuess={submitGuess}
+              />
+            )}
+
+            <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+              <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-match" />Match</li>
+              <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-close" />Close</li>
+              <li className="flex items-center gap-1.5"><span className="size-3 rounded-sm bg-miss" />No match</li>
+              <li className="text-ash">↑↓ point toward the answer</li>
+            </ul>
+
+            <Board guesses={guesses} answer={answer} />
+          </main>
+        )}
       </div>
-    </main>
+
+      <Footer />
+      {modals}
+    </div>
   )
 }

@@ -9,15 +9,14 @@ export function todayKey(date = new Date()) {
   return `${y}-${m}-${d}`
 }
 
-
-
 // Turns "YYYY-MM-DD" back into a local date. Returns null if it isn't valid.
-export function parseDayKey(key){
-  const match = /^(\d{4})-(\d{2})$/.exec(key || '')
+export function parseDayKey(key) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key || '')
   if (!match) return null
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
   return todayKey(date) === key ? date : null
 }
+
 export function dayNumber(date = new Date()) {
   const local = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
   return Math.floor((local - EPOCH) / 86400000)
@@ -47,15 +46,13 @@ export function getDailyArtist(artists, date = new Date()) {
   const index = ((dayNumber(date) % ids.length) + ids.length) % ids.length
   return artists.find((a) => a.id === ids[index])
 }
-
-// Archive all puzzles, newest first [{key, number}]. Puzzle #1 is the launch day.
-
+// Every past puzzle, newest first: [{ key, number }]. Puzzle #1 is the launch day.
 export function pastDays(today = new Date()) {
   const days = []
   for (let n = dayNumber(today) - 1; n >= 0; n--) {
     const date = new Date(EPOCH + n * 86400000)
     const local = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
-    days.push({ key: todayKey(local), number: n + 1})
+    days.push({ key: todayKey(local), number: n + 1 })
   }
   return days
 }

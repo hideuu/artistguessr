@@ -1,20 +1,24 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif; /* big titles */
+  --font-sans: "Libre Franklin", system-ui, sans-serif; /* everything else */
 
-  --color-ink: #1b1633;    /* page background */
-  --color-panel: #2a2250;  /* input, name cells, panels */
-  --color-line: #3d3470;   /* borders, hover */
-  --color-paper: #f3eeff;  /* main text */
-  --color-hit: #2fa36b;    /* match */
-  --color-near: #e0b22e;   /* close */
-  --color-miss: #c8434f;   /* no match */
+  --color-bone: #f2e6cf;      /* page background */
+  --color-parchment: #e4d2ae; /* name cells, empty days */
+  --color-ink: #1c1414;       /* text, primary buttons */
+  --color-crimson: #b3202a;   /* brand, landing, share */
+  --color-plum: #2e1f33;      /* dark notes */
+  --color-hairline: #cdb993;  /* borders */
+  --color-ash: #8a7c6c;       /* muted text */
+  --color-match: #5f7f38;     /* green: match */
+  --color-close: #cf9227;     /* yellow: close */
+  --color-miss: #8a7c6c;      /* grey: no match */
 }
 
 body {
   margin: 0;
-  background: var(--color-ink);
-  color: var(--color-paper);
+  background: var(--color-bone);
+  color: var(--color-ink);
   font-family: var(--font-sans);
 }

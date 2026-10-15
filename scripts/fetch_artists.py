@@ -58,6 +58,7 @@ SEED_ARTISTS = [
     "The Beatles",
     "Linkin Park",
     "Nirvana",
+    "The Vamps",
 
     # Popular Filipino artists
     "SB19",
